@@ -21,7 +21,7 @@ source "$CONFIG_FILE"
 
 PREFIX="${TARGET_URL##*@}"
 PREFIX="${PREFIX%%/live*}"
-SAVE_DIR="${HOME}/tk/${PREFIX}"
+SAVE_DIR="${HOME}/tk_suckless/${PREFIX}"
 # 防呆機制：如果 config 沒寫 WEB_PORT，預設使用 36591
 WEB_PORT=${WEB_PORT:-36591} 
 
