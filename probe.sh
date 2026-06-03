@@ -3,9 +3,10 @@
 # Probe Scanner (probe.sh) - Suckless 純淨版
 # ==========================================
 
-export PATH="/home/syuan/tk/venv/bin:$PATH"
+# 【這就是變聰明的地方】自動抓取當前資料夾，永遠找旁邊的 venv 工具箱！
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="$SCRIPT_DIR/venv/bin:$PATH"
 
-# 載入全域設定檔
 if [ -f "./config.env" ]; then
     source ./config.env
 else

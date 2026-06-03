@@ -3,7 +3,9 @@
 # Suckless Core Engine (record.sh) - 純粹核心版
 # ==============================================================================
 
-export PATH="/home/syuan/tk/venv/bin:$PATH"
+# 【一樣改成自動感應地址】
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="$SCRIPT_DIR/venv/bin:$PATH"
 
 TARGET_URL="$1"
 
@@ -24,7 +26,6 @@ START_TIME=$(date +%s)
 TS_FILE="$SAVE_DIR/$(date +%Y%m%d-%H%M%S).ts"
 log "Recording started: ${TS_FILE##*/}"
 
-# 【核心錄影引擎】
 env LD_PRELOAD="/usr/lib/libjemalloc.so" \
     taskset -c 0 \
     ionice -c 2 -n 0 \
@@ -40,7 +41,6 @@ env LD_PRELOAD="/usr/lib/libjemalloc.so" \
 STREAM_PID=$!
 wait $STREAM_PID
 
-# 【垃圾回收機制】
 LIFESPAN=$(( $(date +%s) - START_TIME ))
 if [ ! -s "$TS_FILE" ] || [ "$LIFESPAN" -lt 5 ]; then
     rm -f "$TS_FILE"
