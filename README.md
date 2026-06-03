@@ -54,16 +54,6 @@
 
 **1. 啟動與修改設定**
 ```bash
-# 複製並編輯設定檔 (此檔不會被 Git 追蹤)
-cp config.env.example config.env
-nano config.env
-
-## 核心指令
-./launcher.sh start   # 啟動系統 (清空舊進程，將雷達與 Web 丟入背景)
-./launcher.sh status  # 打開動態監控儀表板 (按 Ctrl+C 退出面板，不影響背景錄影)
-./launcher.sh stop    # 優雅關閉 (發送 pkill 清空所有相關進程，不留殭屍)
-./launcher.sh log     # 選擇查看不同組件的系統日誌
-
 # 1. 打造一個全新的工具箱 (建立新的 venv)
 python3 -m venv venv
 
@@ -76,4 +66,8 @@ pip install streamlink
 # 4. 把工具箱關起來 (裝完就好了)
 deactivate
 
-這個我加在readme 然後怎麼push 寫commit 你幫我
+## 核心指令
+./launcher.sh start   # 啟動系統 (清空舊進程，將雷達與 Web 丟入背景)
+./launcher.sh status  # 打開動態監控儀表板 (按 Ctrl+C 退出面板，不影響背景錄影)
+./launcher.sh stop    # 優雅關閉 (發送 pkill 清空所有相關進程，不留殭屍)
+./launcher.sh log     # 選擇查看不同組件的系統日誌
