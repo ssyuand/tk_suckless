@@ -16,7 +16,7 @@ fi
 
 PREFIX="${TARGET_URL##*@}"
 PREFIX="${PREFIX%%/live*}"
-SAVE_DIR="${HOME}/tk/${PREFIX}"
+SAVE_DIR="${HOME}/tk_suckless/${PREFIX}"
 mkdir -p "$SAVE_DIR"
 
 log() { echo "[CORE] [$(date +'%Y-%m-%d %H:%M:%S')] $1"; }
