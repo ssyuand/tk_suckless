@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==========================================
 # Master Controller (launcher.sh) - 終極單檔整合版
-# (純 Linux 版：含本機 mpv 遙控器、網頁端雷達即時狀態)
+# (純 Linux 版：回歸純粹點擊下載原始檔、含網頁端雷達即時狀態)
 # ==========================================
 CORE_SCRIPT="./record.sh"
 PROBE_SCRIPT="./probe.sh"
@@ -61,10 +61,10 @@ th{background:#222;color:#fff} a{color:#4facfe;text-decoration:none;font-weight:
 .live-badge{background:#dc3545;color:#fff;font-size:12px;padding:3px 8px;border-radius:12px;margin-left:10px;animation:pulse 1.5s infinite;vertical-align:middle;display:inline-block}
 .offline-badge{background:#6c757d;color:#fff;font-size:12px;padding:3px 8px;border-radius:12px;margin-left:10px;vertical-align:middle;display:inline-block}
 @keyframes pulse{0%{opacity:1} 50%{opacity:0.4} 100%{opacity:1}}
-.preview-box{position:relative;display:inline-block;cursor:pointer;width:40px;text-align:center}
+.preview-box{position:relative;display:inline-block;width:40px;text-align:center}
 .preview-box .icon{font-size:22px;filter:grayscale(100%);opacity:0.6;transition:all 0.2s;display:inline-block}
 .preview-box:hover .icon{filter:grayscale(0%);opacity:1;transform:scale(1.2)}
-.thumb{position:absolute;left:40px;top:50%;transform:translateY(-50%) translateX(-10px);width:256px;height:144px;background:#000;border-radius:8px;object-fit:cover;border:2px solid #4facfe;box-shadow:0 8px 25px rgba(0,0,0,0.9);opacity:0;visibility:hidden;transition:all 0.2s cubic-bezier(0.2,0.8,0.2,1);z-index:900;pointer-events:none}
+.thumb{position:absolute;left:40px;top:50%;transform:translateY(-50%) translateX(-10px);width:256px;height:144px;background:#000;border-radius:8px;object-fit:cover;border:2px solid #4facfe;box-shadow:0 8px 25px rgba(0,0,0,0.9);opacity:0;visibility:hidden;transition:all 0.2s cubic-bezier(0.2,0.8,0.2,1);z-index:999;pointer-events:none}
 .preview-box:hover .thumb{opacity:1;visibility:visible;transform:translateY(-50%) translateX(15px)}
 .disk-container{max-width:1000px;background:#1a1a1a;padding:15px;border-radius:8px;border:1px solid #333;margin:20px 0;box-sizing:border-box}
 .disk-label{font-size:14px;color:#aaa;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;} 
@@ -94,6 +94,7 @@ setInterval(function(){
         if(!txt || txt.includes("ERROR")) return;
         let parts = txt.split('|');
         
+        // 更新磁碟空間
         if(parts.length >= 5) {
             let diskPct = parseFloat(parts[4]);
             document.getElementById("diskText").innerText = parts[3] + " (" + parts[4] + "%)";
@@ -102,18 +103,21 @@ setInterval(function(){
             bar.style.background = diskPct > 90 ? "#dc3545" : "#4facfe";
         }
         
+        # 更新開播狀態燈號
         if(parts.length >= 6) {
             let badge = document.getElementById("liveBadge");
             if(parts[5] === "1") { badge.className = "live-badge"; badge.innerText = "🔴 錄影中"; } 
             else { badge.className = "offline-badge"; badge.innerText = "⚪ 未開播"; }
         }
         
+        # 更新雷達狀態
         if(parts.length >= 7) {
             document.getElementById("probeText").innerText = parts[6];
         }
         
         if(parts[0] === "NONE") return;
         
+        // 更新即時錄影中的檔案大小
         let table = document.getElementById("vidTable");
         if(table && table.rows.length > 1) {
             let firstRow = table.rows[1];
@@ -124,35 +128,13 @@ setInterval(function(){
         }
     });
 }, 1000);
-
-function openPlayer(filename) {
-    fetch('/api/play/' + encodeURIComponent(filename))
-        .then(response => {
-            if(!response.ok) alert("無法播放：找不到檔案，或請檢查系統圖形介面權限。");
-        });
-}
 </script></body></html>
 """
 # ============================================
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
-        if self.path.startswith('/api/play/'):
-            filename = os.path.basename(urllib.parse.unquote(self.path[10:]))
-            if os.path.exists(filename) and filename.endswith('.ts'):
-                my_env = os.environ.copy()
-                if 'DISPLAY' not in my_env: my_env['DISPLAY'] = ':0'
-                if 'WAYLAND_DISPLAY' not in my_env and my_env.get('XDG_SESSION_TYPE') == 'wayland':
-                    my_env['WAYLAND_DISPLAY'] = 'wayland-0'
-                try:
-                    subprocess.Popen(['mpv', filename], env=my_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                except Exception: pass
-                self.send_response(200)
-                self.end_headers()
-                self.wfile.write(b"OK")
-            else: self.send_error(404)
-            return
-
+        # 狀態更新 API
         if self.path == '/api/latest_size':
             self.send_response(200)
             self.send_header("Content-type", "text/plain; charset=utf-8")
@@ -162,6 +144,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 ps_ffmpeg = subprocess.run(['pgrep', '-f', 'ffmpeg.*mpegts'], stdout=subprocess.PIPE)
                 if ps_ffmpeg.returncode == 0: is_live = "1"
 
+                # 精準解析 probe.sh 狀態
                 probe_status = "⚪ 未知狀態"
                 try:
                     if is_live == "1":
@@ -220,13 +203,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 mtime_str = datetime.fromtimestamp(os.path.getmtime(latest_file)).strftime('%Y-%m-%d %H:%M:%S')
                 size_str = f"<b>{size/1024**3:.2f} GB</b>" if size > 1024**3 else f"{size/1024**2:.2f} MB"
                 
-                # 修復了這裡的編碼問題
                 self.wfile.write(f"{latest_file}|{size_str}|{mtime_str}|{disk_info}|{is_live}|{probe_status}".encode('utf-8'))
             except Exception:
-                # 修復了這裡的編碼問題
                 self.wfile.write("ERROR|0|0|0|0|0|錯誤".encode('utf-8'))
             return
             
+        # 縮略圖生成 API
         if self.path.startswith('/thumb/'):
             filename = urllib.parse.unquote(self.path[7:])
             if not filename.endswith('.ts') or not os.path.exists(filename):
@@ -266,11 +248,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             
             mtime = datetime.fromtimestamp(os.stat(fullname).st_mtime).strftime('%Y-%m-%d %H:%M:%S')
             
-            safe_name = name.replace("'", "\\'")
-            onclick_attr = f"onclick=\"openPlayer('{safe_name}')\""
-            
-            thumb_html = f'<div class="preview-box" {onclick_attr}><span class="icon">▶️</span><img src="/thumb/{urllib.parse.quote(name)}" class="thumb" loading="lazy" alt="preview"></div>'
-            rows_html += f'<tr><td style="text-align:center;">{thumb_html}</td><td><a href="javascript:void(0);" {onclick_attr}>{displayname}</a></td><td>{size_str}</td><td>{mtime}</td></tr>\n'
+            # 回歸最初最純粹的 Suckless 樣式：
+            # 🖼️ 圖示單純負責 Hover 彈出縮圖 (不帶任何點擊事件)
+            thumb_html = f'<div class="preview-box"><span class="icon">🖼️</span><img src="/thumb/{urllib.parse.quote(name)}" class="thumb" loading="lazy" alt="preview"></div>'
+            # 點擊名稱直接下載
+            rows_html += f'<tr><td style="text-align:center;">{thumb_html}</td><td><a href="/{urllib.parse.quote(name)}" download>{displayname}</a></td><td>{size_str}</td><td>{mtime}</td></tr>\n'
 
         final_html = HTML_TEMPLATE.replace('{VIDEO_ROWS}', rows_html)
         encoded = final_html.encode('utf-8')
@@ -296,7 +278,7 @@ EOF
             LOCAL_IP=$(ip -4 addr show scope global 2>/dev/null | awk '/inet / {print $2}' | cut -d/ -f1 | head -n 1)
             [ -z "$LOCAL_IP" ] && LOCAL_IP="127.0.0.1"
             echo "================================================="
-            echo -e "👉 系統已全面啟動！面板網址: \e[36mhttp://$LOCAL_IP:$WEB_PORT\e[0m"
+            echo "👉 系統已全面啟動！面板網址: http://$LOCAL_IP:$WEB_PORT"
             echo "================================================="
         fi
         ;;
@@ -347,7 +329,7 @@ EOF
             if pgrep -f "$(basename "$CORE_SCRIPT")" > /dev/null; then echo -e " 🎥 核心引擎 (record):  \e[32m[錄影中 RUNNING]\e[0m"
             else echo -e " 🎥 核心引擎 (record):  \e[90m[待命/未開播 SLEEPING]\e[0m"; fi
             
-            if pgrep -f "web_server.py" > /dev/null; then echo -e " 🌐 網頁伺服器 (Web):   \e[32m[運行中: Port $WEB_PORT]\e[0m"
+            if pkill -0 -f "web_server.py" 2>/dev/null; then echo -e " 🌐 網頁伺服器 (Web):   \e[32m[運行中: Port $WEB_PORT]\e[0m"
             else echo -e " 🌐 網頁伺服器 (Web):   \e[31m[未啟動]\e[0m"; fi
             
             echo "------------------------------------------------------------------------------------------------"
