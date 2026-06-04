@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==========================================
 # Master Controller (launcher.sh) - 終極單檔整合版
-# (含懸浮縮圖、磁碟監控、動態開播狀態燈號)
+# (純 Linux 版：含本機 mpv 遙控器、網頁端雷達即時狀態)
 # ==========================================
 CORE_SCRIPT="./record.sh"
 PROBE_SCRIPT="./probe.sh"
@@ -64,28 +64,36 @@ th{background:#222;color:#fff} a{color:#4facfe;text-decoration:none;font-weight:
 .preview-box{position:relative;display:inline-block;cursor:pointer;width:40px;text-align:center}
 .preview-box .icon{font-size:22px;filter:grayscale(100%);opacity:0.6;transition:all 0.2s;display:inline-block}
 .preview-box:hover .icon{filter:grayscale(0%);opacity:1;transform:scale(1.2)}
-.thumb{position:absolute;left:40px;top:50%;transform:translateY(-50%) translateX(-10px);width:256px;height:144px;background:#000;border-radius:8px;object-fit:cover;border:2px solid #4facfe;box-shadow:0 8px 25px rgba(0,0,0,0.9);opacity:0;visibility:hidden;transition:all 0.2s cubic-bezier(0.2,0.8,0.2,1);z-index:999;pointer-events:none}
+.thumb{position:absolute;left:40px;top:50%;transform:translateY(-50%) translateX(-10px);width:256px;height:144px;background:#000;border-radius:8px;object-fit:cover;border:2px solid #4facfe;box-shadow:0 8px 25px rgba(0,0,0,0.9);opacity:0;visibility:hidden;transition:all 0.2s cubic-bezier(0.2,0.8,0.2,1);z-index:900;pointer-events:none}
 .preview-box:hover .thumb{opacity:1;visibility:visible;transform:translateY(-50%) translateX(15px)}
 .disk-container{max-width:1000px;background:#1a1a1a;padding:15px;border-radius:8px;border:1px solid #333;margin:20px 0;box-sizing:border-box}
-.disk-label{font-size:14px;color:#aaa;margin-bottom:8px;display:flex;justify-content:space-between} .disk-label span{color:#fff;font-weight:bold}
+.disk-label{font-size:14px;color:#aaa;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;} 
+.disk-label span{color:#fff;font-weight:bold}
 .disk-bar-bg{width:100%;height:10px;background:#111;border-radius:5px;overflow:hidden}
 .disk-bar-fill{height:100%;width:0%;background:#4facfe;transition:width 0.5s ease, background 0.3s ease}
+.schedule-text{color:#aaa !important; font-size:12px; font-weight:normal !important; margin-left:8px;}
 </style></head><body>
+
 <h2>🎥 直播錄影檔案庫 <span id="liveBadge" class="offline-badge">⚪ 未開播</span></h2>
 <div class="disk-container">
     <div class="disk-label"><span>💾 伺服器磁碟空間</span><span id="diskText">計算中...</span></div>
     <div class="disk-bar-bg"><div id="diskBarFill" class="disk-bar-fill"></div></div>
+    
+    <div class="disk-label" style="margin-top:15px; border-top:1px solid #333; padding-top:15px;">
+        <span>📡 雷達狀態 <span class="schedule-text">(排程: __PROBE_START__ ~ __PROBE_END__)</span></span>
+        <span id="probeText" style="color:#ffc107;">連線中...</span>
+    </div>
 </div>
 <table id="vidTable"><tr><th style="width:60px;text-align:center;">預覽</th><th>檔名</th><th>大小</th><th>錄影時間</th></tr>
 {VIDEO_ROWS}
 </table>
+
 <script>
 setInterval(function(){
     fetch('/api/latest_size').then(r => r.text()).then(txt => {
         if(!txt || txt.includes("ERROR")) return;
         let parts = txt.split('|');
         
-        // 更新磁碟空間
         if(parts.length >= 5) {
             let diskPct = parseFloat(parts[4]);
             document.getElementById("diskText").innerText = parts[3] + " (" + parts[4] + "%)";
@@ -94,21 +102,18 @@ setInterval(function(){
             bar.style.background = diskPct > 90 ? "#dc3545" : "#4facfe";
         }
         
-        // 更新動態燈號
         if(parts.length >= 6) {
             let badge = document.getElementById("liveBadge");
-            if(parts[5] === "1") {
-                badge.className = "live-badge";
-                badge.innerText = "🔴 錄影中";
-            } else {
-                badge.className = "offline-badge";
-                badge.innerText = "⚪ 未開播";
-            }
+            if(parts[5] === "1") { badge.className = "live-badge"; badge.innerText = "🔴 錄影中"; } 
+            else { badge.className = "offline-badge"; badge.innerText = "⚪ 未開播"; }
+        }
+        
+        if(parts.length >= 7) {
+            document.getElementById("probeText").innerText = parts[6];
         }
         
         if(parts[0] === "NONE") return;
         
-        // 更新表格檔案大小
         let table = document.getElementById("vidTable");
         if(table && table.rows.length > 1) {
             let firstRow = table.rows[1];
@@ -119,25 +124,87 @@ setInterval(function(){
         }
     });
 }, 1000);
+
+function openPlayer(filename) {
+    fetch('/api/play/' + encodeURIComponent(filename))
+        .then(response => {
+            if(!response.ok) alert("無法播放：找不到檔案，或請檢查系統圖形介面權限。");
+        });
+}
 </script></body></html>
 """
 # ============================================
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
+        if self.path.startswith('/api/play/'):
+            filename = os.path.basename(urllib.parse.unquote(self.path[10:]))
+            if os.path.exists(filename) and filename.endswith('.ts'):
+                my_env = os.environ.copy()
+                if 'DISPLAY' not in my_env: my_env['DISPLAY'] = ':0'
+                if 'WAYLAND_DISPLAY' not in my_env and my_env.get('XDG_SESSION_TYPE') == 'wayland':
+                    my_env['WAYLAND_DISPLAY'] = 'wayland-0'
+                try:
+                    subprocess.Popen(['mpv', filename], env=my_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except Exception: pass
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"OK")
+            else: self.send_error(404)
+            return
+
         if self.path == '/api/latest_size':
             self.send_response(200)
             self.send_header("Content-type", "text/plain; charset=utf-8")
             self.end_headers()
             try:
-                # 偵測是否正在錄影 (透過 pgrep 找 ffmpeg)
                 is_live = "0"
-                try:
-                    ps = subprocess.run(['pgrep', '-f', 'ffmpeg.*mpegts'], stdout=subprocess.PIPE)
-                    if ps.returncode == 0: is_live = "1"
-                except Exception: pass
+                ps_ffmpeg = subprocess.run(['pgrep', '-f', 'ffmpeg.*mpegts'], stdout=subprocess.PIPE)
+                if ps_ffmpeg.returncode == 0: is_live = "1"
 
-                # 讀取磁碟空間
+                probe_status = "⚪ 未知狀態"
+                try:
+                    if is_live == "1":
+                        probe_status = "🟢 已交接錄影 (哨兵休眠)"
+                    else:
+                        ps_probe = subprocess.run(['pgrep', '-f', '[p]robe.sh'], stdout=subprocess.PIPE, text=True)
+                        if ps_probe.stdout.strip():
+                            probe_pid = ps_probe.stdout.strip().split()[0]
+                            ps_child = subprocess.run(['pgrep', '-P', probe_pid], stdout=subprocess.PIPE, text=True)
+                            
+                            if ps_child.stdout.strip():
+                                child_pid = ps_child.stdout.strip().split()[0]
+                                ps_comm = subprocess.run(['ps', '-p', child_pid, '-o', 'comm='], stdout=subprocess.PIPE, text=True)
+                                child_comm = ps_comm.stdout.strip()
+                                
+                                if child_comm == 'streamlink':
+                                    probe_status = "🟣 發送請求中 (檢測開播...)"
+                                elif child_comm == 'sleep':
+                                    ps_args = subprocess.run(['ps', '-p', child_pid, '-o', 'args='], stdout=subprocess.PIPE, text=True)
+                                    sleep_val = int(ps_args.stdout.strip().split()[1])
+                                    
+                                    ps_etime = subprocess.run(['ps', '-p', child_pid, '-o', 'etime='], stdout=subprocess.PIPE, text=True)
+                                    etime_str = ps_etime.stdout.strip()
+                                    elapsed = 0
+                                    if etime_str:
+                                        for pt in etime_str.replace('-', ':').split(':'):
+                                            elapsed = elapsed * 60 + int(pt)
+                                            
+                                    remain = max(0, sleep_val - elapsed)
+                                    
+                                    if sleep_val >= 300:
+                                        probe_status = f"💤 深度休眠 (倒數 {remain} 秒後醒來)"
+                                    else:
+                                        probe_status = f"🟡 刺探待命中 (倒數 {remain} 秒後探測)"
+                                else:
+                                    probe_status = "🔄 資料處理中..."
+                            else:
+                                probe_status = "🔄 資料處理中..."
+                        else:
+                            probe_status = "❌ 雷達已停止"
+                except Exception:
+                    probe_status = "⚠️ 狀態讀取失敗"
+
                 disk = shutil.disk_usage('.')
                 d_used, d_total = disk.used / (1024**3), disk.total / (1024**3)
                 d_pct = (disk.used / disk.total) * 100
@@ -145,7 +212,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
                 files = [f for f in os.listdir('.') if f.endswith('.ts')]
                 if not files:
-                    self.wfile.write(f"NONE|0|0|{disk_info}|{is_live}".encode('utf-8'))
+                    self.wfile.write(f"NONE|0|0|{disk_info}|{is_live}|{probe_status}".encode('utf-8'))
                     return
                 
                 latest_file = max(files, key=os.path.getmtime)
@@ -153,10 +220,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 mtime_str = datetime.fromtimestamp(os.path.getmtime(latest_file)).strftime('%Y-%m-%d %H:%M:%S')
                 size_str = f"<b>{size/1024**3:.2f} GB</b>" if size > 1024**3 else f"{size/1024**2:.2f} MB"
                 
-                # 回傳格式: 檔名 | 大小 | 時間 | 磁碟文字 | 磁碟% | 錄影狀態
-                self.wfile.write(f"{latest_file}|{size_str}|{mtime_str}|{disk_info}|{is_live}".encode('utf-8'))
+                # 修復了這裡的編碼問題
+                self.wfile.write(f"{latest_file}|{size_str}|{mtime_str}|{disk_info}|{is_live}|{probe_status}".encode('utf-8'))
             except Exception:
-                self.wfile.write(b"ERROR|0|0|0|0|0")
+                # 修復了這裡的編碼問題
+                self.wfile.write("ERROR|0|0|0|0|0|錯誤".encode('utf-8'))
             return
             
         if self.path.startswith('/thumb/'):
@@ -197,8 +265,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             else: size_str = f"{size/1024**2:.2f} MB"
             
             mtime = datetime.fromtimestamp(os.stat(fullname).st_mtime).strftime('%Y-%m-%d %H:%M:%S')
-            thumb_html = f'<div class="preview-box"><span class="icon">🖼️</span><img src="/thumb/{urllib.parse.quote(name)}" class="thumb" loading="lazy" alt="preview"></div>'
-            rows_html += f'<tr><td style="text-align:center;">{thumb_html}</td><td><a href="{urllib.parse.quote(name)}">{displayname}</a></td><td>{size_str}</td><td>{mtime}</td></tr>\n'
+            
+            safe_name = name.replace("'", "\\'")
+            onclick_attr = f"onclick=\"openPlayer('{safe_name}')\""
+            
+            thumb_html = f'<div class="preview-box" {onclick_attr}><span class="icon">▶️</span><img src="/thumb/{urllib.parse.quote(name)}" class="thumb" loading="lazy" alt="preview"></div>'
+            rows_html += f'<tr><td style="text-align:center;">{thumb_html}</td><td><a href="javascript:void(0);" {onclick_attr}>{displayname}</a></td><td>{size_str}</td><td>{mtime}</td></tr>\n'
 
         final_html = HTML_TEMPLATE.replace('{VIDEO_ROWS}', rows_html)
         encoded = final_html.encode('utf-8')
@@ -214,7 +286,9 @@ socketserver.TCPServer.allow_reuse_address = True
 with socketserver.TCPServer(("", port), Handler) as httpd:
     httpd.serve_forever()
 EOF
-            # --- Python 生成結束 ---
+
+            sed -i "s/__PROBE_START__/${PROBE_START:-未設定}/g" "$SAVE_DIR/web_server.py"
+            sed -i "s/__PROBE_END__/${PROBE_END:-未設定}/g" "$SAVE_DIR/web_server.py"
 
             cd "$SAVE_DIR" || exit
             nohup python3 web_server.py "$WEB_PORT" > web_server_error.log 2>&1 &
