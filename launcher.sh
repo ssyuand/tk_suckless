@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==========================================
 # Master Controller (launcher.sh) - 終極單檔整合版
-# (純 Linux 版：回歸純粹點擊下載原始檔、含網頁端雷達即時狀態)
+# (純 Linux 版：回歸純粹點擊下載原始檔、完全修復磁碟與雷達監控)
 # ==========================================
 CORE_SCRIPT="./record.sh"
 PROBE_SCRIPT="./probe.sh"
@@ -94,7 +94,7 @@ setInterval(function(){
         if(!txt || txt.includes("ERROR")) return;
         let parts = txt.split('|');
         
-        // 更新磁碟空間
+        // 1. 更新磁碟空間
         if(parts.length >= 5) {
             let diskPct = parseFloat(parts[4]);
             document.getElementById("diskText").innerText = parts[3] + " (" + parts[4] + "%)";
@@ -103,21 +103,21 @@ setInterval(function(){
             bar.style.background = diskPct > 90 ? "#dc3545" : "#4facfe";
         }
         
-        # 更新開播狀態燈號
+        // 2. 更新開播狀態燈號
         if(parts.length >= 6) {
             let badge = document.getElementById("liveBadge");
             if(parts[5] === "1") { badge.className = "live-badge"; badge.innerText = "🔴 錄影中"; } 
             else { badge.className = "offline-badge"; badge.innerText = "⚪ 未開播"; }
         }
         
-        # 更新雷達狀態
+        // 3. 更新雷達狀態
         if(parts.length >= 7) {
             document.getElementById("probeText").innerText = parts[6];
         }
         
         if(parts[0] === "NONE") return;
         
-        // 更新即時錄影中的檔案大小
+        // 4. 更新即時錄影中的檔案大小
         let table = document.getElementById("vidTable");
         if(table && table.rows.length > 1) {
             let firstRow = table.rows[1];
@@ -248,10 +248,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             
             mtime = datetime.fromtimestamp(os.stat(fullname).st_mtime).strftime('%Y-%m-%d %H:%M:%S')
             
-            # 回歸最初最純粹的 Suckless 樣式：
-            # 🖼️ 圖示單純負責 Hover 彈出縮圖 (不帶任何點擊事件)
             thumb_html = f'<div class="preview-box"><span class="icon">🖼️</span><img src="/thumb/{urllib.parse.quote(name)}" class="thumb" loading="lazy" alt="preview"></div>'
-            # 點擊名稱直接下載
             rows_html += f'<tr><td style="text-align:center;">{thumb_html}</td><td><a href="/{urllib.parse.quote(name)}" download>{displayname}</a></td><td>{size_str}</td><td>{mtime}</td></tr>\n'
 
         final_html = HTML_TEMPLATE.replace('{VIDEO_ROWS}', rows_html)
@@ -305,7 +302,7 @@ EOF
             
             if [ -n "$PROBE_PID" ]; then
                 if pgrep -f "$(basename "$CORE_SCRIPT")" > /dev/null; then
-                    PROBE_STATE="\e[32m[已交接錄影: 哨兵休眠中]\e[0m"
+                    PROBE_STATE="\e[32m[Macro]已交接錄影: 哨兵休眠中\e[0m"
                 else
                     CHILD_PID=$(pgrep -P "$PROBE_PID" | head -n 1)
                     if [ -n "$CHILD_PID" ]; then
@@ -329,7 +326,7 @@ EOF
             if pgrep -f "$(basename "$CORE_SCRIPT")" > /dev/null; then echo -e " 🎥 核心引擎 (record):  \e[32m[錄影中 RUNNING]\e[0m"
             else echo -e " 🎥 核心引擎 (record):  \e[90m[待命/未開播 SLEEPING]\e[0m"; fi
             
-            if pkill -0 -f "web_server.py" 2>/dev/null; then echo -e " 🌐 網頁伺服器 (Web):   \e[32m[運行中: Port $WEB_PORT]\e[0m"
+            if pgrep -f "web_server.py" > /dev/null; then echo -e " 🌐 網頁伺服器 (Web):   \e[32m[運行中: Port $WEB_PORT]\e[0m"
             else echo -e " 🌐 網頁伺服器 (Web):   \e[31m[未啟動]\e[0m"; fi
             
             echo "------------------------------------------------------------------------------------------------"
